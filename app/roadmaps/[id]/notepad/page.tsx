@@ -89,7 +89,7 @@ export default function NotepadPage() {
         id: uuidv4(),
         roadmap_id: id,
         lane_id: laneId === "notepad" ? null : laneId,
-        title: "New Note",
+        title: "",
         description: "",
         created_by: user.id,
       }

@@ -14,6 +14,9 @@ interface NoteCardProps {
 }
 
 export function NoteCard({ note, onClick, onDragStart }: NoteCardProps) {
+  const title = note.title ?? ""
+  const hasTitle = title.trim().length > 0
+
   return (
     <Card
       className="p-3 cursor-pointer hover:shadow-md transition-shadow bg-white border border-border"
@@ -23,7 +26,9 @@ export function NoteCard({ note, onClick, onDragStart }: NoteCardProps) {
     >
       <div className="flex items-start gap-2">
         <Circle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-        <p className="text-sm text-foreground flex-1">{note.title}</p>
+        <p className={`text-sm flex-1 ${hasTitle ? "text-foreground" : "text-muted-foreground italic"}`}>
+          {hasTitle ? title : "Untitled"}
+        </p>
       </div>
     </Card>
   )

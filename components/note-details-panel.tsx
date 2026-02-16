@@ -39,7 +39,7 @@ export function NoteDetailsPanel({ noteId, roadmapId, onClose, onUpdate, onDelet
 
     if (data) {
       setNote(data)
-      setTitle(data.title)
+      setTitle(data.title ?? "")
       setDescription(data.description || "")
     }
   }
