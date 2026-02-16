@@ -32,6 +32,21 @@ export default function NotepadPage() {
     loadData()
   }, [id])
 
+  const laneKey = (laneId: string | null) => laneId ?? "__notepad__"
+
+  const normalizeOrderIndexes = (list: Note[]) => {
+    const laneCounters = new Map<string, number>()
+
+    return list.map((note) => {
+      const key = laneKey(note.lane_id)
+      const nextOrder = laneCounters.get(key) ?? 0
+      laneCounters.set(key, nextOrder + 1)
+
+      if (note.order_index === nextOrder) return note
+      return { ...note, order_index: nextOrder }
+    })
+  }
+
   const loadData = async () => {
     const supabase = createClient()
 
@@ -55,7 +70,13 @@ export default function NotepadPage() {
     setRoadmapTitle(roadmap.title)
 
     // Load notes
-    const { data: notesData } = await supabase.from("notes").select("*").eq("roadmap_id", id).order("created_at")
+    const { data: notesData } = await supabase
+      .from("notes")
+      .select("*")
+      .eq("roadmap_id", id)
+      .order("lane_id", { ascending: true })
+      .order("order_index", { ascending: true })
+      .order("created_at", { ascending: true })
 
     // Load workstream lanes
     const { data: lanesData } = await supabase
@@ -122,25 +143,77 @@ export default function NotepadPage() {
     e.dataTransfer.dropEffect = "move"
   }
 
-  const handleDrop = async (e: React.DragEvent, targetLaneId: string) => {
-    e.preventDefault()
+  const moveNoteInState = (currentNotes: Note[], draggedNoteId: string, targetLaneId: string | null, beforeNoteId?: string) => {
+    const dragged = currentNotes.find((n) => n.id === draggedNoteId)
+    if (!dragged) return currentNotes
 
+    const remaining = currentNotes.filter((n) => n.id !== draggedNoteId)
+    const movedNote: Note = { ...dragged, lane_id: targetLaneId }
+
+    if (beforeNoteId) {
+      const beforeIndex = remaining.findIndex((n) => n.id === beforeNoteId)
+      if (beforeIndex >= 0) {
+        const updated = [...remaining]
+        updated.splice(beforeIndex, 0, movedNote)
+        return normalizeOrderIndexes(updated)
+      }
+    }
+
+    const lastTargetIndex = remaining.reduce(
+      (lastIndex, note, index) => (note.lane_id === targetLaneId ? index : lastIndex),
+      -1,
+    )
+
+    if (lastTargetIndex >= 0) {
+      const updated = [...remaining]
+      updated.splice(lastTargetIndex + 1, 0, movedNote)
+      return normalizeOrderIndexes(updated)
+    }
+
+    return normalizeOrderIndexes([...remaining, movedNote])
+  }
+
+  const moveDraggedNote = async (targetLaneId: string, beforeNoteId?: string) => {
     if (!draggedNote) return
+
+    if (beforeNoteId && beforeNoteId === draggedNote.id) {
+      setDraggedNote(null)
+      return
+    }
 
     const actualLaneId = targetLaneId === "notepad" ? null : targetLaneId
 
     // Optimistic update
     const previousNotes = [...notes]
-    setNotes((prev) => prev.map((n) => (n.id === draggedNote.id ? { ...n, lane_id: actualLaneId } : n)))
+    const nextNotes = moveNoteInState(previousNotes, draggedNote.id, actualLaneId, beforeNoteId)
+    setNotes(nextNotes)
 
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from("notes")
-        .update({ lane_id: actualLaneId, updated_at: new Date().toISOString() })
-        .eq("id", draggedNote.id)
+      const previousById = new Map(previousNotes.map((note) => [note.id, note]))
+      const changedNotes = nextNotes.filter((note) => {
+        const previous = previousById.get(note.id)
+        return !previous || previous.lane_id !== note.lane_id || previous.order_index !== note.order_index
+      })
 
-      if (error) throw error
+      if (changedNotes.length > 0) {
+        const supabase = createClient()
+        const now = new Date().toISOString()
+        const results = await Promise.all(
+          changedNotes.map((note) =>
+            supabase
+              .from("notes")
+              .update({
+                lane_id: note.lane_id,
+                order_index: note.order_index,
+                updated_at: now,
+              })
+              .eq("id", note.id),
+          ),
+        )
+
+        const failed = results.find((result) => result.error)
+        if (failed?.error) throw failed.error
+      }
     } catch (error) {
       console.error("Error moving note:", error)
       setNotes(previousNotes)
@@ -153,6 +226,17 @@ export default function NotepadPage() {
     }
 
     setDraggedNote(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent, targetLaneId: string) => {
+    e.preventDefault()
+    await moveDraggedNote(targetLaneId)
+  }
+
+  const handleDropOnNote = async (e: React.DragEvent, targetLaneId: string, targetNoteId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    await moveDraggedNote(targetLaneId, targetNoteId)
   }
 
   const handleNoteClick = (note: Note) => {
@@ -220,7 +304,15 @@ export default function NotepadPage() {
             {/* Notes List */}
             <div className="flex-1 space-y-2 overflow-y-auto p-4">
               {getNotesForLane(lane.id).map((note) => (
-                <NoteCard key={note.id} note={note} onClick={handleNoteClick} onDragStart={handleDragStart} />
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onClick={handleNoteClick}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDropOnNote(e, lane.id, note.id)}
+                  onDragEnd={() => setDraggedNote(null)}
+                />
               ))}
             </div>
 

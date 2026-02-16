@@ -11,9 +11,12 @@ interface NoteCardProps {
   note: Note
   onClick: (note: Note) => void
   onDragStart?: (e: React.DragEvent, note: Note) => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent) => void
+  onDragEnd?: () => void
 }
 
-export function NoteCard({ note, onClick, onDragStart }: NoteCardProps) {
+export function NoteCard({ note, onClick, onDragStart, onDragOver, onDrop, onDragEnd }: NoteCardProps) {
   const title = note.title ?? ""
   const hasTitle = title.trim().length > 0
 
@@ -22,6 +25,9 @@ export function NoteCard({ note, onClick, onDragStart }: NoteCardProps) {
       className="p-3 cursor-pointer hover:shadow-md transition-shadow bg-white border border-border"
       draggable
       onDragStart={(e) => onDragStart?.(e, note)}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       onClick={() => onClick(note)}
     >
       <div className="flex items-start gap-2">
